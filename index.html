@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#090b10">
+  <title>Colorify - Image palette extractor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <a class="brand" href="." aria-label="Colorify home">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>
+          <strong>Colorify</strong>
+          <small>Image palette extractor</small>
+        </span>
+      </a>
+    </header>
+
+    <main>
+      <section id="uploadView" class="upload-view" aria-labelledby="pageTitle">
+        <div class="intro-copy">
+          <p class="eyebrow">A quieter way to find your palette</p>
+          <h1 id="pageTitle">Find the colors<br><em>inside your image.</em></h1>
+          <p class="intro-text">Extract a focused, ready-to-use palette from any visual. Everything happens locally in your browser.</p>
+        </div>
+
+        <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-controls="fileInput" aria-label="Upload an image">
+          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          <div class="drop-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/><path d="M8 12.5h.01M16 12.5h.01" stroke-linecap="round"/></svg>
+          </div>
+          <h2>Drop your image here</h2>
+          <p>or <span>click to browse</span></p>
+          <div class="format-list"><span>PNG</span><span>JPG</span><span>WEBP</span></div>
+        </div>
+        <p id="errorMessage" class="error-message" role="alert" hidden></p>
+      </section>
+
+      <section id="resultView" class="result-view" aria-live="polite" hidden>
+        <div class="result-toolbar">
+          <div>
+            <p class="eyebrow"><span class="status-dot active"></span> Palette extracted</p>
+            <h1>Your image, <em>in color.</em></h1>
+          </div>
+          <button id="resetButton" class="text-button" type="button"><span aria-hidden="true">+</span> Upload another image</button>
+        </div>
+
+        <div id="analysisState" class="analysis-state" hidden>
+          <span class="loader"></span> Analyzing image...
+        </div>
+
+        <div id="resultContent" class="result-grid" hidden>
+          <article class="preview-panel panel">
+            <div class="panel-heading"><h2>Image preview</h2></div>
+            <div class="image-frame"><img id="imagePreview" alt="Uploaded image preview"></div>
+            <div class="image-meta"><span id="imageName">image.jpg</span><span id="imageDimensions">-- x --</span></div>
+          </article>
+
+          <article class="palette-panel panel">
+            <div class="palette-heading">
+              <div class="panel-heading"><h2>Color palette</h2></div>
+              <div class="count-control" role="group" aria-label="Number of colors">
+                <button type="button" data-count="3">3</button>
+                <button type="button" data-count="5" class="selected">5</button>
+                <button type="button" data-count="8">8</button>
+                <button type="button" data-count="12">12</button>
+              </div>
+            </div>
+            <div id="paletteGrid" class="palette-grid"></div>
+            <button id="copyCssButton" class="copy-css-button" type="button"><span>Copy CSS variables</span><span class="button-arrow" aria-hidden="true">&#8594;</span></button>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <section id="uiPreviewSection" class="ui-preview-section" aria-labelledby="uiPreviewTitle" hidden>
+      <div class="ui-preview-heading">
+        <div>
+          <p class="eyebrow">A practical glimpse</p>
+          <h2 id="uiPreviewTitle">Preview as UI</h2>
+          <p>See how your palette works in a real interface.</p>
+        </div>
+        <div class="preview-toolbar">
+          <span class="preview-using"><span id="previewColorDots" aria-hidden="true"></span>Using your palette</span>
+          <div class="preview-style-control" role="group" aria-label="Preview style">
+            <span>Preview style</span>
+            <button type="button" data-preview-style="dashboard" class="selected">Dashboard</button>
+            <button type="button" data-preview-style="landing">Landing</button>
+            <button type="button" data-preview-style="card">Card</button>
+          </div>
+        </div>
+      </div>
+      <div id="previewStage" class="preview-stage" aria-live="polite"></div>
+    </section>
+
+    <section id="historySection" class="history-section" aria-labelledby="historyTitle">
+      <div class="history-heading">
+        <div>
+          <p class="eyebrow">Your saved explorations</p>
+          <h2 id="historyTitle">Palette History</h2>
+        </div>
+        <button id="clearHistoryButton" class="history-action" type="button" hidden>Clear history</button>
+      </div>
+      <div id="historyConfirm" class="history-confirm" role="alertdialog" aria-label="Confirm clearing palette history" hidden>
+        <span>Clear all saved palettes?</span>
+        <button id="confirmClearButton" type="button">Clear</button>
+        <button id="cancelClearButton" type="button">Cancel</button>
+      </div>
+      <div id="historyList" class="history-list"></div>
+      <p id="historyEmpty" class="history-empty">No palettes saved yet.</p>
+    </section>
+
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

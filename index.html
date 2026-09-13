@@ -53,7 +53,7 @@
         </div>
 
         <div id="resultContent" class="result-grid" hidden>
-          <article class="preview-panel panel">
+          <article id="imagePreviewPanel" class="preview-panel panel">
             <div class="panel-heading"><h2>Image preview</h2></div>
             <div class="image-frame"><img id="imagePreview" alt="Uploaded image preview"></div>
             <div class="image-meta"><span id="imageName">image.jpg</span><span id="imageDimensions">-- x --</span></div>
@@ -94,6 +94,61 @@
         </div>
       </div>
       <div id="previewStage" class="preview-stage" aria-live="polite"></div>
+    </section>
+
+    <section id="gradientSection" class="gradient-section" aria-labelledby="gradientTitle" hidden>
+      <div class="gradient-heading">
+        <div>
+          <p class="eyebrow">A new way to blend</p>
+          <h2 id="gradientTitle">Gradient Generator</h2>
+          <p>Turn your palette into a gradient.</p>
+        </div>
+        <div class="gradient-heading-actions">
+          <button id="shuffleGradientButton" class="gradient-action" type="button">Shuffle <span aria-hidden="true">&#8594;</span></button>
+          <button id="swapGradientButton" class="gradient-action" type="button">Swap <span aria-hidden="true">&#8596;</span></button>
+        </div>
+      </div>
+      <div id="gradientStage" class="gradient-stage"></div>
+      <div class="gradient-workspace">
+        <div class="gradient-controls">
+          <div class="gradient-control-group">
+            <span class="gradient-label">Gradient type</span>
+            <div class="gradient-segmented" role="group" aria-label="Gradient type">
+              <button type="button" data-gradient-type="linear" class="selected">Linear</button>
+              <button type="button" data-gradient-type="radial">Radial</button>
+            </div>
+          </div>
+          <div class="gradient-control-group">
+            <span class="gradient-label">Colors</span>
+            <div class="gradient-segmented" role="group" aria-label="Number of gradient colors">
+              <button type="button" data-gradient-count="2" class="selected">2</button>
+              <button type="button" data-gradient-count="3">3</button>
+            </div>
+          </div>
+          <div id="gradientDirectionGroup" class="gradient-control-group">
+            <span class="gradient-label">Direction</span>
+            <div class="direction-control" role="group" aria-label="Linear gradient direction">
+              <button type="button" data-gradient-direction="90deg" class="selected" aria-label="Right">&#8594;</button>
+              <button type="button" data-gradient-direction="135deg" aria-label="Down right">&#8600;</button>
+              <button type="button" data-gradient-direction="180deg" aria-label="Down">&#8595;</button>
+              <button type="button" data-gradient-direction="225deg" aria-label="Down left">&#8601;</button>
+              <button type="button" data-gradient-direction="270deg" aria-label="Left">&#8592;</button>
+              <button type="button" data-gradient-direction="315deg" aria-label="Up left">&#8598;</button>
+              <button type="button" data-gradient-direction="0deg" aria-label="Up">&#8593;</button>
+              <button type="button" data-gradient-direction="45deg" aria-label="Up right">&#8599;</button>
+            </div>
+          </div>
+        </div>
+        <div class="gradient-selection">
+          <div class="gradient-selection-header"><span class="gradient-label">Choose colors</span><span id="gradientSelectionHint">Select 2 colors</span></div>
+          <div id="gradientColorSelectors" class="gradient-color-selectors"></div>
+        </div>
+      </div>
+      <div class="gradient-output">
+        <div><span class="gradient-label">Generated CSS</span><code id="gradientCssOutput"></code></div>
+        <button id="copyGradientButton" class="copy-gradient-button" type="button"><span>Copy CSS</span><span aria-hidden="true">&#8594;</span></button>
+      </div>
+      <div class="gradient-presets"><span class="gradient-label">Presets</span><button type="button" data-gradient-preset="soft">Soft</button><button type="button" data-gradient-preset="contrast">Contrast</button><button type="button" data-gradient-preset="sunset">Sunset</button><button type="button" data-gradient-preset="deep">Deep</button></div>
     </section>
 
     <section id="historySection" class="history-section" aria-labelledby="historyTitle">

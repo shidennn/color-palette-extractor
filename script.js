@@ -4,10 +4,17 @@ const MAX_HISTORY_ITEMS = 20;
 const state = {
   image: null,
   imageUrl: null,
+  allColors: [],
   colors: [],
   colorCount: 5,
   history: [],
-  previewStyle: 'dashboard'
+  previewStyle: 'dashboard',
+  gradient: {
+    type: 'linear',
+    count: 2,
+    direction: '90deg',
+    colorIndexes: []
+  }
 };
 
 const elements = {
@@ -21,6 +28,7 @@ const elements = {
   imagePreview: document.querySelector('#imagePreview'),
   imageName: document.querySelector('#imageName'),
   imageDimensions: document.querySelector('#imageDimensions'),
+  imagePreviewPanel: document.querySelector('#imagePreviewPanel'),
   paletteGrid: document.querySelector('#paletteGrid'),
   resetButton: document.querySelector('#resetButton'),
   copyCssButton: document.querySelector('#copyCssButton'),
@@ -32,7 +40,14 @@ const elements = {
   cancelClearButton: document.querySelector('#cancelClearButton'),
   uiPreviewSection: document.querySelector('#uiPreviewSection'),
   previewStage: document.querySelector('#previewStage'),
-  previewColorDots: document.querySelector('#previewColorDots')
+  previewColorDots: document.querySelector('#previewColorDots'),
+  gradientSection: document.querySelector('#gradientSection'),
+  gradientStage: document.querySelector('#gradientStage'),
+  gradientColorSelectors: document.querySelector('#gradientColorSelectors'),
+  gradientSelectionHint: document.querySelector('#gradientSelectionHint'),
+  gradientDirectionGroup: document.querySelector('#gradientDirectionGroup'),
+  gradientCssOutput: document.querySelector('#gradientCssOutput'),
+  copyGradientButton: document.querySelector('#copyGradientButton')
 };
 
 function showError(message) {
@@ -66,7 +81,7 @@ function isValidHex(value) {
 }
 
 function savePaletteToHistory(fileName) {
-  const colors = state.colors.map(color => color.hex);
+  const colors = state.allColors.map(color => color.hex);
   const latest = state.history[0];
   if (latest && latest.count === state.colorCount && latest.colors.join(',') === colors.join(',')) return;
 
@@ -83,6 +98,10 @@ function savePaletteToHistory(fileName) {
     // History is optional; extraction should still work when storage is unavailable.
   }
   renderPaletteHistory();
+}
+
+function updateDisplayedColors() {
+  state.colors = state.allColors.slice(0, state.colorCount);
 }
 
 function renderPaletteHistory() {
@@ -126,13 +145,24 @@ function hexToRgb(hex) {
 function restorePalette(index) {
   const item = state.history[index];
   if (!item) return;
-  state.colors = item.colors.map(hexToRgb);
+  if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
+  state.image = null;
+  state.imageUrl = null;
+  elements.imagePreview.removeAttribute('src');
+  elements.imagePreview.alt = '';
+  elements.imageName.textContent = '';
+  elements.imageDimensions.textContent = '';
+  elements.imagePreviewPanel.hidden = true;
+  elements.resultContent.classList.add('without-image');
+  state.allColors = item.colors.map(hexToRgb);
   state.colorCount = item.count;
+  updateDisplayedColors();
   document.querySelectorAll('[data-count]').forEach(button => {
     button.classList.toggle('selected', Number(button.dataset.count) === state.colorCount);
   });
   renderPalette();
   renderPreview();
+  resetGradient(state.colors);
   elements.uploadView.hidden = true;
   elements.resultView.hidden = false;
   elements.analysisState.hidden = true;
@@ -182,6 +212,8 @@ function loadImage(file) {
     state.image = image;
     state.imageUrl = imageUrl;
     elements.imagePreview.src = imageUrl;
+    elements.imagePreviewPanel.hidden = false;
+    elements.resultContent.classList.remove('without-image');
     elements.imagePreview.alt = `${file.name} preview`;
     elements.imageName.textContent = file.name;
     elements.imageDimensions.textContent = `${image.naturalWidth} x ${image.naturalHeight}`;
@@ -191,9 +223,11 @@ function loadImage(file) {
     elements.analysisState.hidden = false;
     // Let the loading state paint before doing canvas work.
     requestAnimationFrame(() => {
-      state.colors = extractColors(image, state.colorCount);
+      state.allColors = extractColors(image, 12);
+      updateDisplayedColors();
       renderPalette();
       renderPreview();
+      resetGradient(state.colors);
       if (state.colors.length) savePaletteToHistory(file.name);
       elements.analysisState.hidden = true;
       elements.resultContent.hidden = false;
@@ -369,6 +403,105 @@ function renderPreview() {
     : state.previewStyle === 'card' ? renderCardPreview(roles) : renderDashboardPreview(roles);
 }
 
+function resetGradient(colors) {
+  state.gradient.count = 2;
+  state.gradient.colorIndexes = colors.map((color, index) => index < state.gradient.count ? index : null).filter(index => index !== null);
+  ensureGradientColorCount();
+  renderGradient();
+}
+
+function ensureGradientColorCount() {
+  while (state.gradient.colorIndexes.length < state.gradient.count && state.colors.length) {
+    state.gradient.colorIndexes.push(state.gradient.colorIndexes[0] ?? 0);
+  }
+}
+
+function getGradientColors() {
+  return state.gradient.colorIndexes.map(index => state.colors[index]).filter(Boolean);
+}
+
+function generateGradient() {
+  const colors = getGradientColors();
+  if (!colors.length) return '';
+  const stops = colors.map(color => color.hex).join(', ');
+  return state.gradient.type === 'radial'
+    ? `radial-gradient(circle, ${stops})`
+    : `linear-gradient(${state.gradient.direction}, ${stops})`;
+}
+
+function getGradientCSS() {
+  return `background: ${generateGradient()};`;
+}
+
+function renderGradient() {
+  const hasPalette = state.colors.length > 0;
+  elements.gradientSection.hidden = !hasPalette;
+  if (!hasPalette) return;
+  const gradient = generateGradient();
+  elements.gradientStage.style.background = gradient;
+  elements.gradientStage.className = `gradient-stage gradient-${state.gradient.type}`;
+  elements.gradientCssOutput.textContent = getGradientCSS();
+  elements.gradientDirectionGroup.hidden = state.gradient.type !== 'linear';
+  elements.gradientSelectionHint.textContent = `Select ${state.gradient.count} colors`;
+  document.querySelectorAll('[data-gradient-type]').forEach(button => button.classList.toggle('selected', button.dataset.gradientType === state.gradient.type));
+  document.querySelectorAll('[data-gradient-count]').forEach(button => button.classList.toggle('selected', Number(button.dataset.gradientCount) === state.gradient.count));
+  document.querySelectorAll('[data-gradient-direction]').forEach(button => button.classList.toggle('selected', button.dataset.gradientDirection === state.gradient.direction));
+  renderGradientColorSelectors();
+}
+
+function renderGradientColorSelectors() {
+  elements.gradientColorSelectors.innerHTML = state.gradient.colorIndexes.map((selectedIndex, slot) => `
+    <div class="gradient-color-row"><span>Color ${slot + 1}</span><div>${state.colors.map((color, index) => `<button type="button" class="gradient-swatch ${index === selectedIndex ? 'selected' : ''}" data-gradient-slot="${slot}" data-gradient-color="${index}" aria-label="Use ${color.hex} for color ${slot + 1}" style="background:${color.hex}"></button>`).join('')}</div><code>${state.colors[selectedIndex]?.hex || ''}</code></div>
+  `).join('');
+}
+
+function selectGradientColor(slot, colorIndex) {
+  if (!state.colors[colorIndex]) return;
+  state.gradient.colorIndexes[slot] = colorIndex;
+  renderGradient();
+}
+
+function shuffleGradient() {
+  if (!state.colors.length) return;
+  const available = state.colors.map((color, index) => index);
+  state.gradient.colorIndexes = available.sort(() => Math.random() - .5).slice(0, Math.min(state.gradient.count, available.length));
+  while (state.gradient.colorIndexes.length < state.gradient.count) state.gradient.colorIndexes.push(state.gradient.colorIndexes[0] || 0);
+  if (state.gradient.type === 'linear') {
+    const directions = [...document.querySelectorAll('[data-gradient-direction]')].map(button => button.dataset.gradientDirection);
+    state.gradient.direction = directions[Math.floor(Math.random() * directions.length)];
+  }
+  renderGradient();
+}
+
+function swapGradientColors() {
+  state.gradient.colorIndexes.reverse();
+  renderGradient();
+}
+
+function applyGradientPreset(preset) {
+  if (!state.colors.length) return;
+  const last = state.colors.length - 1;
+  const middle = Math.min(2, last);
+  const presets = {
+    soft: [0, last, middle],
+    contrast: [last, 0, Math.floor(last / 2)],
+    sunset: [Math.floor(last * .55), last, 0],
+    deep: [last, Math.floor(last * .35), 0]
+  };
+  state.gradient.colorIndexes = presets[preset].slice(0, state.gradient.count).map(index => Math.min(index, last));
+  ensureGradientColorCount();
+  renderGradient();
+}
+
+async function copyGradientCSS() {
+  const copied = await copyText(getGradientCSS());
+  if (!copied) return;
+  const label = elements.copyGradientButton.querySelector('span');
+  const originalLabel = label.textContent;
+  label.textContent = 'Copied!';
+  window.setTimeout(() => { label.textContent = originalLabel; }, 1400);
+}
+
 function renderDashboardPreview(roles) {
   return `<div class="mock-window">
     <aside class="mock-sidebar"><div class="mock-logo"><span></span>northstar</div><nav><a class="active">Overview</a><a>Projects</a><a>Calendar</a><a>Settings</a></nav><div class="mock-user"><b>AM</b><span>Avery Morgan<small>Pro account</small></span></div></aside>
@@ -439,11 +572,14 @@ function resetApp() {
   if (state.imageUrl) URL.revokeObjectURL(state.imageUrl);
   state.image = null;
   state.imageUrl = null;
+  state.allColors = [];
   state.colors = [];
   elements.fileInput.value = '';
   elements.paletteGrid.innerHTML = '';
   elements.previewStage.innerHTML = '';
   elements.uiPreviewSection.hidden = true;
+  elements.gradientStage.innerHTML = '';
+  elements.gradientSection.hidden = true;
   elements.resultView.hidden = true;
   elements.resultContent.hidden = true;
   elements.uploadView.hidden = false;
@@ -468,6 +604,34 @@ elements.paletteGrid.addEventListener('click', event => {
   const button = event.target.closest('[data-copy-color]');
   if (button) copyColor(button.dataset.copyColor, button);
 });
+elements.gradientColorSelectors.addEventListener('click', event => {
+  const swatch = event.target.closest('[data-gradient-slot]');
+  if (swatch) selectGradientColor(Number(swatch.dataset.gradientSlot), Number(swatch.dataset.gradientColor));
+});
+document.querySelectorAll('[data-gradient-type]').forEach(button => button.addEventListener('click', () => {
+  state.gradient.type = button.dataset.gradientType;
+  renderGradient();
+}));
+document.querySelectorAll('[data-gradient-count]').forEach(button => button.addEventListener('click', () => {
+  state.gradient.count = Number(button.dataset.gradientCount);
+  const available = state.colors.map((color, index) => index);
+  state.gradient.colorIndexes = state.gradient.colorIndexes.slice(0, state.gradient.count);
+  available.forEach(index => {
+    if (state.gradient.colorIndexes.length < state.gradient.count && !state.gradient.colorIndexes.includes(index)) state.gradient.colorIndexes.push(index);
+  });
+  ensureGradientColorCount();
+  renderGradient();
+}));
+document.querySelectorAll('[data-gradient-direction]').forEach(button => button.addEventListener('click', () => {
+  state.gradient.direction = button.dataset.gradientDirection;
+  renderGradient();
+}));
+document.querySelectorAll('[data-gradient-preset]').forEach(button => button.addEventListener('click', () => applyGradientPreset(button.dataset.gradientPreset)));
+elements.shuffleGradientButton = document.querySelector('#shuffleGradientButton');
+elements.swapGradientButton = document.querySelector('#swapGradientButton');
+elements.shuffleGradientButton.addEventListener('click', shuffleGradient);
+elements.swapGradientButton.addEventListener('click', swapGradientColors);
+elements.copyGradientButton.addEventListener('click', copyGradientCSS);
 elements.historyList.addEventListener('click', event => {
   const deleteButton = event.target.closest('[data-delete-history]');
   if (deleteButton) {
@@ -490,11 +654,10 @@ elements.confirmClearButton.addEventListener('click', clearPaletteHistory);
 document.querySelectorAll('[data-count]').forEach(button => button.addEventListener('click', () => {
   state.colorCount = Number(button.dataset.count);
   document.querySelectorAll('[data-count]').forEach(item => item.classList.toggle('selected', item === button));
-  if (state.image) {
-    state.colors = extractColors(state.image, state.colorCount);
-    renderPalette();
-    renderPreview();
-  }
+  updateDisplayedColors();
+  renderPalette();
+  renderPreview();
+  resetGradient(state.colors);
 }));
 document.querySelectorAll('[data-preview-style]').forEach(button => button.addEventListener('click', () => {
   state.previewStyle = button.dataset.previewStyle;

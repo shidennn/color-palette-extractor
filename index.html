@@ -62,11 +62,18 @@
           <article class="palette-panel panel">
             <div class="palette-heading">
               <div class="panel-heading"><h2>Color palette</h2></div>
-              <div class="count-control" role="group" aria-label="Number of colors">
-                <button type="button" data-count="3">3</button>
-                <button type="button" data-count="5" class="selected">5</button>
-                <button type="button" data-count="8">8</button>
-                <button type="button" data-count="12">12</button>
+              <div class="palette-controls">
+                <div class="count-control" role="group" aria-label="Number of colors">
+                  <button type="button" data-count="3">3</button>
+                  <button type="button" data-count="5" class="selected">5</button>
+                  <button type="button" data-count="8">8</button>
+                  <button type="button" data-count="12">12</button>
+                </div>
+                <div class="algorithm-control" role="group" aria-label="Color extraction algorithm">
+                  <button type="button" data-algorithm="original" class="selected">Original</button>
+                  <button type="button" data-algorithm="kmeans">K-Means</button>
+                  <button type="button" data-algorithm="median-cut">Median Cut</button>
+                </div>
               </div>
             </div>
             <div id="paletteGrid" class="palette-grid"></div>

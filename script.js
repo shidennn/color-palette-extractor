@@ -1,5 +1,6 @@
 const HISTORY_KEY = 'colorify_palette_history';
 const MAX_HISTORY_ITEMS = 20;
+const MASTER_COLOR_COUNT = 12;
 
 const state = {
   image: null,
@@ -7,6 +8,8 @@ const state = {
   allColors: [],
   colors: [],
   colorCount: 5,
+  algorithm: 'original',
+  isHistoryPalette: false,
   history: [],
   previewStyle: 'dashboard',
   gradient: {
@@ -73,6 +76,7 @@ function loadPaletteHistory() {
 function isValidHistoryItem(item) {
   return item && Array.isArray(item.colors) && item.colors.length > 0 && item.colors.every(isValidHex)
     && Number.isInteger(item.count) && item.count > 0 && item.count <= 12
+    && (!item.algorithm || ['original', 'kmeans', 'median-cut'].includes(item.algorithm))
     && typeof item.fileName === 'string' && Number.isFinite(item.createdAt);
 }
 
@@ -83,11 +87,14 @@ function isValidHex(value) {
 function savePaletteToHistory(fileName) {
   const colors = state.allColors.map(color => color.hex);
   const latest = state.history[0];
-  if (latest && latest.count === state.colorCount && latest.colors.join(',') === colors.join(',')) return;
+  if (latest && latest.count === state.colorCount
+    && (latest.algorithm || 'original') === 'original'
+    && latest.colors.join(',') === colors.join(',')) return;
 
   state.history.unshift({
     colors,
     count: state.colorCount,
+    algorithm: 'original',
     fileName: fileName || 'Untitled image',
     createdAt: Date.now()
   });
@@ -102,6 +109,17 @@ function savePaletteToHistory(fileName) {
 
 function updateDisplayedColors() {
   state.colors = state.allColors.slice(0, state.colorCount);
+}
+
+function updateAlgorithmButtons() {
+  document.querySelectorAll('[data-algorithm]').forEach(button => {
+    const algorithm = button.dataset.algorithm;
+    const isSelected = algorithm === state.algorithm;
+    const isDisabled = state.isHistoryPalette && algorithm !== 'original';
+    button.classList.toggle('selected', isSelected);
+    button.disabled = isDisabled;
+    button.classList.toggle('disabled', isDisabled);
+  });
 }
 
 function renderPaletteHistory() {
@@ -156,10 +174,13 @@ function restorePalette(index) {
   elements.resultContent.classList.add('without-image');
   state.allColors = item.colors.map(hexToRgb);
   state.colorCount = item.count;
+  state.algorithm = 'original';
+  state.isHistoryPalette = true;
   updateDisplayedColors();
   document.querySelectorAll('[data-count]').forEach(button => {
     button.classList.toggle('selected', Number(button.dataset.count) === state.colorCount);
   });
+  updateAlgorithmButtons();
   renderPalette();
   renderPreview();
   resetGradient(state.colors);
@@ -211,6 +232,9 @@ function loadImage(file) {
   image.onload = () => {
     state.image = image;
     state.imageUrl = imageUrl;
+    state.algorithm = 'original';
+    state.isHistoryPalette = false;
+    updateAlgorithmButtons();
     elements.imagePreview.src = imageUrl;
     elements.imagePreviewPanel.hidden = false;
     elements.resultContent.classList.remove('without-image');
@@ -223,7 +247,7 @@ function loadImage(file) {
     elements.analysisState.hidden = false;
     // Let the loading state paint before doing canvas work.
     requestAnimationFrame(() => {
-      state.allColors = extractColors(image, 12);
+      state.allColors = extractColorsByAlgorithm(image, state.algorithm, MASTER_COLOR_COUNT);
       updateDisplayedColors();
       renderPalette();
       renderPreview();
@@ -240,7 +264,228 @@ function loadImage(file) {
   image.src = imageUrl;
 }
 
-function extractColors(image, requestedCount) {
+function extractColorsByAlgorithm(image, algorithm, count) {
+  switch (algorithm) {
+    case 'kmeans':
+      return extractColorsKMeans(image, count);
+    case 'median-cut':
+      return extractColorsMedianCut(image, count);
+    case 'original':
+    default:
+      return extractColorsOriginal(image, count);
+  }
+}
+
+function extractColorsMedianCut(image, requestedCount) {
+  const maxDimension = 160;
+  const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(image, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const samples = [];
+  const step = Math.max(1, Math.floor(Math.sqrt((width * height) / 12000)));
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const index = (y * width + x) * 4;
+      if (pixels[index + 3] < 30) continue;
+      samples.push({ red: pixels[index], green: pixels[index + 1], blue: pixels[index + 2] });
+    }
+  }
+  if (!samples.length) return [];
+
+  const boxes = [{ pixels: samples }];
+  while (boxes.length < requestedCount) {
+    let selectedBoxIndex = -1;
+    let selectedRange = 0;
+    let selectedStats = null;
+
+    for (let boxIndex = 0; boxIndex < boxes.length; boxIndex += 1) {
+      const box = boxes[boxIndex];
+      if (box.pixels.length < 2) continue;
+      const stats = getMedianCutBoxStats(box.pixels);
+      if (stats.range > selectedRange) {
+        selectedBoxIndex = boxIndex;
+        selectedRange = stats.range;
+        selectedStats = stats;
+      }
+    }
+
+    if (selectedBoxIndex === -1 || selectedRange === 0) break;
+    const box = boxes[selectedBoxIndex];
+    box.pixels.sort((first, second) => second[selectedStats.channel] - first[selectedStats.channel]);
+    const splitIndex = Math.floor(box.pixels.length / 2);
+    if (splitIndex <= 0 || splitIndex >= box.pixels.length) break;
+    boxes.splice(selectedBoxIndex, 1, {
+      pixels: box.pixels.slice(0, splitIndex)
+    }, {
+      pixels: box.pixels.slice(splitIndex)
+    });
+  }
+
+  const representatives = boxes.map(box => {
+    let red = 0;
+    let green = 0;
+    let blue = 0;
+    for (const pixel of box.pixels) {
+      red += pixel.red;
+      green += pixel.green;
+      blue += pixel.blue;
+    }
+    return {
+      red: Math.max(0, Math.min(255, Math.round(red / box.pixels.length))),
+      green: Math.max(0, Math.min(255, Math.round(green / box.pixels.length))),
+      blue: Math.max(0, Math.min(255, Math.round(blue / box.pixels.length))),
+      weight: box.pixels.length
+    };
+  }).sort((first, second) => second.weight - first.weight);
+
+  const unique = [];
+  for (const color of representatives) {
+    if (unique.some(existing => calculateColorDistance(existing, color) < 18)) continue;
+    unique.push({ ...color, hex: rgbToHex(color.red, color.green, color.blue) });
+  }
+  return unique;
+}
+
+function getMedianCutBoxStats(pixels) {
+  let minRed = 255;
+  let maxRed = 0;
+  let minGreen = 255;
+  let maxGreen = 0;
+  let minBlue = 255;
+  let maxBlue = 0;
+  for (const pixel of pixels) {
+    minRed = Math.min(minRed, pixel.red);
+    maxRed = Math.max(maxRed, pixel.red);
+    minGreen = Math.min(minGreen, pixel.green);
+    maxGreen = Math.max(maxGreen, pixel.green);
+    minBlue = Math.min(minBlue, pixel.blue);
+    maxBlue = Math.max(maxBlue, pixel.blue);
+  }
+  const ranges = { red: maxRed - minRed, green: maxGreen - minGreen, blue: maxBlue - minBlue };
+  const channel = Object.keys(ranges).sort((first, second) => ranges[second] - ranges[first])[0];
+  return { channel, range: ranges[channel] };
+}
+
+function extractColorsKMeans(image, requestedCount) {
+  const maxDimension = 160;
+  const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  context.drawImage(image, 0, 0, width, height);
+  const pixels = context.getImageData(0, 0, width, height).data;
+  const samples = [];
+  const step = Math.max(1, Math.floor(Math.sqrt((width * height) / 12000)));
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const index = (y * width + x) * 4;
+      if (pixels[index + 3] < 30) continue;
+      samples.push({ red: pixels[index], green: pixels[index + 1], blue: pixels[index + 2] });
+    }
+  }
+  if (!samples.length) return [];
+
+  const clusterCount = Math.min(requestedCount, samples.length);
+  const centroids = [];
+  for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+    const sampleIndex = Math.floor(cluster * samples.length / clusterCount);
+    centroids.push({ ...samples[sampleIndex] });
+  }
+
+  const assignments = new Array(samples.length).fill(0);
+  const maxIterations = 15;
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    const sums = Array.from({ length: clusterCount }, () => ({ red: 0, green: 0, blue: 0, count: 0 }));
+
+    for (let sampleIndex = 0; sampleIndex < samples.length; sampleIndex += 1) {
+      const sample = samples[sampleIndex];
+      let nearestCluster = 0;
+      let nearestDistance = Infinity;
+      for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+        const centroid = centroids[cluster];
+        const red = sample.red - centroid.red;
+        const green = sample.green - centroid.green;
+        const blue = sample.blue - centroid.blue;
+        const distance = red * red + green * green + blue * blue;
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestCluster = cluster;
+        }
+      }
+      assignments[sampleIndex] = nearestCluster;
+      const sum = sums[nearestCluster];
+      sum.red += sample.red;
+      sum.green += sample.green;
+      sum.blue += sample.blue;
+      sum.count += 1;
+    }
+
+    let largestChange = 0;
+    for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+      const sum = sums[cluster];
+      const previous = centroids[cluster];
+      let next;
+      if (sum.count === 0) {
+        next = samples[(cluster * 7919 + iteration * 104729) % samples.length];
+      } else {
+        next = {
+          red: sum.red / sum.count,
+          green: sum.green / sum.count,
+          blue: sum.blue / sum.count
+        };
+      }
+      const change = Math.abs(previous.red - next.red) + Math.abs(previous.green - next.green) + Math.abs(previous.blue - next.blue);
+      largestChange = Math.max(largestChange, change);
+      centroids[cluster] = { ...next };
+    }
+    if (largestChange < 0.5) break;
+  }
+
+  const populations = new Array(clusterCount).fill(0);
+  for (const sample of samples) {
+    let nearestCluster = 0;
+    let nearestDistance = Infinity;
+    for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+      const centroid = centroids[cluster];
+      const red = sample.red - centroid.red;
+      const green = sample.green - centroid.green;
+      const blue = sample.blue - centroid.blue;
+      const distance = red * red + green * green + blue * blue;
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestCluster = cluster;
+      }
+    }
+    populations[nearestCluster] += 1;
+  }
+
+  const results = centroids.map((centroid, cluster) => ({
+    red: Math.max(0, Math.min(255, Math.round(centroid.red))),
+    green: Math.max(0, Math.min(255, Math.round(centroid.green))),
+    blue: Math.max(0, Math.min(255, Math.round(centroid.blue))),
+    weight: populations[cluster]
+  })).sort((first, second) => second.weight - first.weight);
+
+  const unique = [];
+  for (const color of results) {
+    if (unique.some(existing => calculateColorDistance(existing, color) < 18)) continue;
+    unique.push({ ...color, hex: rgbToHex(color.red, color.green, color.blue) });
+  }
+  return unique;
+}
+
+function extractColorsOriginal(image, requestedCount) {
   const maxDimension = 160;
   const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
   const width = Math.max(1, Math.round(image.naturalWidth * scale));
@@ -574,6 +819,9 @@ function resetApp() {
   state.imageUrl = null;
   state.allColors = [];
   state.colors = [];
+  state.algorithm = 'original';
+  state.isHistoryPalette = false;
+  updateAlgorithmButtons();
   elements.fileInput.value = '';
   elements.paletteGrid.innerHTML = '';
   elements.previewStage.innerHTML = '';
@@ -658,6 +906,18 @@ document.querySelectorAll('[data-count]').forEach(button => button.addEventListe
   renderPalette();
   renderPreview();
   resetGradient(state.colors);
+}));
+document.querySelectorAll('[data-algorithm]').forEach(button => button.addEventListener('click', () => {
+  if (state.isHistoryPalette && button.dataset.algorithm !== 'original') return;
+  state.algorithm = button.dataset.algorithm;
+  updateAlgorithmButtons();
+  if (state.image) {
+    state.allColors = extractColorsByAlgorithm(state.image, state.algorithm, MASTER_COLOR_COUNT);
+    updateDisplayedColors();
+    renderPalette();
+    renderPreview();
+    resetGradient(state.colors);
+  }
 }));
 document.querySelectorAll('[data-preview-style]').forEach(button => button.addEventListener('click', () => {
   state.previewStyle = button.dataset.previewStyle;
